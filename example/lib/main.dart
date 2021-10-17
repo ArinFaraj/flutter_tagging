@@ -103,7 +103,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   deleteIconColor: Colors.white,
                 );
               },
-              onChanged: () {
+              onChanged: (langs) {
                 setState(() {
                   _selectedValuesJson = _selectedLanguages
                       .map<String>((lang) => '\n${lang.toJson()}')
@@ -132,7 +132,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
-/// LanguageService
+// ignore: avoid_classes_with_only_static_members, public_member_api_docs
 class LanguageService {
   /// Mocks fetching language from network API with delay of 500ms.
   static Future<List<Language>> getLanguages(String query) async {
@@ -151,7 +151,7 @@ class LanguageService {
 }
 
 /// Language Class
-class Language extends Taggable {
+class Language {
   ///
   final String name;
 
@@ -163,9 +163,6 @@ class Language extends Taggable {
     this.name,
     this.position,
   });
-
-  @override
-  List<Object> get props => [name];
 
   /// Converts the class to json string.
   String toJson() => '''  {

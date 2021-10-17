@@ -8,13 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 
 import 'configurations.dart';
-import 'taggable.dart';
 
 ///
-class FlutterTagging<T extends Taggable> extends StatefulWidget {
+class FlutterTagging<T> extends StatefulWidget {
   /// Called every time the value changes.
   ///  i.e. when items are selected or removed.
-  final VoidCallback? onChanged;
+  final Function(List<T>?)? onChanged;
 
   /// The configuration of the [TextField] that the [FlutterTagging] widget displays.
   final TextFieldConfiguration textFieldConfiguration;
@@ -37,6 +36,18 @@ class FlutterTagging<T extends Taggable> extends StatefulWidget {
   /// ```
   final FutureOr<List<T>> Function(String) findSuggestions;
 
+  ///enable/disable the widget
+  final bool enabled;
+
+  ///DropDownSearch label
+  final String? label;
+
+  ///DropDownSearch hint
+  final String? hint;
+
+  ///dropdownSearch input decoration
+  final InputDecoration? dropdownSearchDecoration;
+
   /// The configuration of [Chip]s that are displayed for selected tags.
   final ChipConfiguration Function(T) configureChip;
 
@@ -50,6 +61,16 @@ class FlutterTagging<T extends Taggable> extends StatefulWidget {
   ///
   /// If null, tag addition feature is disabled.
   final T Function(String)? additionCallback;
+
+  /// change the AutovalidateMode
+  final AutovalidateMode autoValidateMode;
+
+  /// An optional method to call with the final value when the form is saved via
+  final FormFieldSetter<List<T>>? onSaved;
+
+  /// An optional method that validates an input. Returns an error string to
+  /// display if the input is invalid, or null otherwise.
+  final FormFieldValidator<List<T>>? validator;
 
   /// Called when add to tag button is pressed.
   ///
@@ -70,7 +91,7 @@ class FlutterTagging<T extends Taggable> extends StatefulWidget {
   /// It is provided with the suggestions box instance and the animation
   /// controller, and expected to return some animation that uses the controller
   /// to display the suggestion box.
-  final dynamic Function(BuildContext, Widget, AnimationController?)?
+  final Widget Function(BuildContext, Widget, AnimationController?)?
       transitionBuilder;
 
   /// The configuration of suggestion box.
@@ -132,19 +153,27 @@ class FlutterTagging<T extends Taggable> extends StatefulWidget {
   ///
   final List<T> initialItems;
 
-  // Limit max number of selectable items
+  /// Limit max number of selectable items
   final int limit;
 
   /// Creates a [FlutterTagging] widget.
   FlutterTagging({
+    Key? key,
     required this.initialItems,
     required this.findSuggestions,
     required this.configureChip,
     required this.configureSuggestion,
+    this.dropdownSearchDecoration,
     this.onChanged,
+    this.onSaved,
+    this.label,
+    this.hint,
     this.additionCallback,
     this.enableImmediateSuggestion = false,
     this.errorBuilder,
+    this.validator,
+    this.autoValidateMode = AutovalidateMode.disabled,
+    this.enabled = true,
     this.loadingBuilder,
     this.emptyBuilder,
     this.wrapConfiguration = const WrapConfiguration(),
@@ -159,23 +188,20 @@ class FlutterTagging<T extends Taggable> extends StatefulWidget {
     this.animationStart = 0.25,
     this.onAdded,
     this.limit = -1,
-  })  : assert(initialItems != null),
-        assert(findSuggestions != null),
-        assert(configureChip != null),
-        assert(configureSuggestion != null);
+  }) : super(key: key);
 
   @override
   _FlutterTaggingState<T> createState() => _FlutterTaggingState<T>();
 }
 
-class _FlutterTaggingState<T extends Taggable>
-    extends State<FlutterTagging<T>> {
+class _FlutterTaggingState<T> extends State<FlutterTagging<T>> {
   TextEditingController? _textController;
   FocusNode? _focusNode;
   T? _additionItem;
 
   @override
   void initState() {
+    //print('initing tag form ${widget.initialItems}');
     super.initState();
     _textController =
         widget.textFieldConfiguration.controller ?? TextEditingController();
@@ -191,157 +217,229 @@ class _FlutterTaggingState<T extends Taggable>
 
   @override
   Widget build(BuildContext context) {
-    bool limitEnabled = (widget.limit > 0 && widget.initialItems.length >= widget.limit);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: [
-        Visibility(
-          visible: !limitEnabled,
-          child: TypeAheadField<T>(
-            getImmediateSuggestions: widget.enableImmediateSuggestion,
-            debounceDuration: widget.debounceDuration,
-            hideOnEmpty: widget.hideOnEmpty,
-            hideOnError: widget.hideOnError,
-            hideOnLoading: widget.hideOnLoading,
-            animationStart: widget.animationStart,
-            animationDuration: widget.animationDuration,
-            autoFlipDirection:
-              widget.suggestionsBoxConfiguration.autoFlipDirection,
-            direction: widget.suggestionsBoxConfiguration.direction,
-            hideSuggestionsOnKeyboardHide:
-                widget.suggestionsBoxConfiguration.hideSuggestionsOnKeyboardHide,
-            keepSuggestionsOnLoading:
-                widget.suggestionsBoxConfiguration.keepSuggestionsOnLoading,
-            keepSuggestionsOnSuggestionSelected: widget
-                .suggestionsBoxConfiguration.keepSuggestionsOnSuggestionSelected,
-            suggestionsBoxController:
-                widget.suggestionsBoxConfiguration.suggestionsBoxController,
-            suggestionsBoxDecoration:
-                widget.suggestionsBoxConfiguration.suggestionsBoxDecoration,
-            suggestionsBoxVerticalOffset:
-                widget.suggestionsBoxConfiguration.suggestionsBoxVerticalOffset,
-            errorBuilder: widget.errorBuilder,
-            transitionBuilder: widget.transitionBuilder,
-            loadingBuilder: (context) =>
-                widget.loadingBuilder as Widget? ??
-                SizedBox(
-                  height: 3.0,
-                  child: LinearProgressIndicator(),
-                ),
-            noItemsFoundBuilder: widget.emptyBuilder,
-            textFieldConfiguration: widget.textFieldConfiguration.copyWith(
-              focusNode: _focusNode,
-              controller: _textController,
-              enabled: widget.textFieldConfiguration.enabled && !limitEnabled,
-            ),
-            suggestionsCallback: (query) async {
-              if (limitEnabled) {
-                return [];
-              }
-              List<T> suggestions = await widget.findSuggestions(query);
-              suggestions.removeWhere(widget.initialItems.contains);
-              if (widget.additionCallback != null && query.isNotEmpty) {
-                T additionItem = widget.additionCallback!(query);
-                if (!suggestions.contains(additionItem) &&
-                  !widget.initialItems.contains(additionItem)) {
-                  _additionItem = additionItem;
-                  suggestions.insert(0, additionItem);
-                } else {
-                  _additionItem = null;
-                }
-              }
-              return suggestions;
-            },
-            itemBuilder: (context, item) {
-              var conf = widget.configureSuggestion(item);
-              return ListTile(
-                key: ObjectKey(item),
-                title: conf.title,
-                subtitle: conf.subtitle,
-                leading: conf.leading,
-                trailing: InkWell(
-                  splashColor: conf.splashColor ?? Theme.of(context).splashColor,
-                  borderRadius: conf.splashRadius,
-                  onTap: () async {
-                    if (widget.onAdded != null) {
-                      T _item = await widget.onAdded!(item);
-                      if (_item != null) {
-                        widget.initialItems.add(_item);
-                      }
-                    } else {
-                      widget.initialItems.add(item);
-                    }
-                    setState(() {});
-                    if (widget.onChanged != null) {
-                      widget.onChanged!();
-                    }
-                    _textController!.clear();
-                    _focusNode!.unfocus();
-                  },
-                  child: Builder(
-                    builder: (context) {
-                      if (_additionItem != null && _additionItem == item) {
-                        return conf.additionWidget!;
-                      } else {
-                        return SizedBox(width: 0);
+    return FormField<List<T>>(
+      enabled: widget.enabled,
+      onSaved: widget.onSaved,
+      validator: widget.validator,
+      autovalidateMode: widget.autoValidateMode,
+      initialValue: widget.initialItems,
+      builder: (FormFieldState<List<T>> state) {
+        // if (state.value != widget.initialItems) {
+        //   WidgetsBinding.instance!.addPostFrameCallback((_) {
+        //     state.didChange(widget.initialItems);
+        //   });
+        // }
+
+        //print('building tag form ${state.value}');
+        var limitEnabled =
+            (widget.limit > 0 && state.value!.length >= widget.limit);
+        return InputDecorator(
+          decoration: _manageDropdownDecoration(state, state.value),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Visibility(
+                visible: !limitEnabled,
+                child: TypeAheadField<T>(
+                  getImmediateSuggestions: widget.enableImmediateSuggestion,
+                  debounceDuration: widget.debounceDuration,
+                  hideOnEmpty: widget.hideOnEmpty,
+                  hideOnError: widget.hideOnError,
+                  hideOnLoading: widget.hideOnLoading,
+                  animationStart: widget.animationStart,
+                  animationDuration: widget.animationDuration,
+                  autoFlipDirection:
+                      widget.suggestionsBoxConfiguration.autoFlipDirection,
+                  direction: widget.suggestionsBoxConfiguration.direction,
+                  hideSuggestionsOnKeyboardHide: widget
+                      .suggestionsBoxConfiguration
+                      .hideSuggestionsOnKeyboardHide,
+                  keepSuggestionsOnLoading: widget
+                      .suggestionsBoxConfiguration.keepSuggestionsOnLoading,
+                  keepSuggestionsOnSuggestionSelected: widget
+                      .suggestionsBoxConfiguration
+                      .keepSuggestionsOnSuggestionSelected,
+                  suggestionsBoxController: widget
+                      .suggestionsBoxConfiguration.suggestionsBoxController,
+                  suggestionsBoxDecoration: widget
+                      .suggestionsBoxConfiguration.suggestionsBoxDecoration,
+                  suggestionsBoxVerticalOffset: widget
+                      .suggestionsBoxConfiguration.suggestionsBoxVerticalOffset,
+                  errorBuilder: widget.errorBuilder,
+                  transitionBuilder: widget.transitionBuilder,
+                  loadingBuilder: (context) =>
+                      widget.loadingBuilder as Widget? ??
+                      SizedBox(
+                        height: 3.0,
+                        child: LinearProgressIndicator(),
+                      ),
+                  noItemsFoundBuilder: widget.emptyBuilder,
+                  textFieldConfiguration:
+                      widget.textFieldConfiguration.copyWith(
+                    focusNode: _focusNode,
+                    controller: _textController,
+                    onSubmitted: (value) async {
+                      if (widget.additionCallback != null && value.isNotEmpty) {
+                        var additionItem = widget.additionCallback!(value);
+
+                        if (!state.value!.contains(additionItem)) {
+                          var list = [...state.value!];
+                          if (widget.onAdded != null) {
+                            var _item = await widget.onAdded!(additionItem);
+                            if (_item != null) {
+                              list.add(_item);
+                            }
+                          } else {
+                            list.add(additionItem);
+                          }
+                          state.didChange(list);
+                          if (widget.onChanged != null) {
+                            widget.onChanged!(state.value!);
+                          }
+                          _textController!.clear();
+                          _focusNode!.requestFocus();
+                        }
                       }
                     },
+                    enabled:
+                        widget.textFieldConfiguration.enabled && !limitEnabled,
                   ),
+                  suggestionsCallback: (query) async {
+                    if (limitEnabled) {
+                      return [];
+                    }
+                    var suggestions = await widget.findSuggestions(query);
+                    suggestions.removeWhere(state.value!.contains);
+                    if (widget.additionCallback != null && query.isNotEmpty) {
+                      var additionItem = widget.additionCallback!(query);
+                      if (!suggestions.contains(additionItem) &&
+                          !state.value!.contains(additionItem)) {
+                        _additionItem = additionItem;
+                        suggestions.insert(0, additionItem);
+                      } else {
+                        _additionItem = null;
+                      }
+                    }
+                    return suggestions;
+                  },
+                  itemBuilder: (context, item) {
+                    var conf = widget.configureSuggestion(item);
+                    return ListTile(
+                      key: ObjectKey(item),
+                      onTap: () async {
+                        var list = [...state.value!];
+
+                        if (widget.onAdded != null) {
+                          var _item = await widget.onAdded!(item);
+                          if (_item != null) {
+                            list.add(_item);
+                          }
+                        } else {
+                          list.add(item);
+                        }
+
+                        state.didChange(list);
+                        if (widget.onChanged != null) {
+                          widget.onChanged!(state.value!);
+                        }
+                        _textController!.clear();
+                        _focusNode!.unfocus();
+                      },
+                      title: conf.title,
+                      subtitle: conf.subtitle,
+                      leading: conf.leading,
+                      trailing: Builder(
+                        builder: (context) {
+                          if (_additionItem != null && _additionItem == item) {
+                            return conf.additionWidget!;
+                          } else {
+                            return SizedBox(width: 0);
+                          }
+                        },
+                      ),
+                    );
+                  },
+                  onSuggestionSelected: (suggestion) {
+                    if (_additionItem != suggestion) {
+                      var list = [...state.value!, suggestion];
+
+                      state.didChange(list);
+
+                      if (widget.onChanged != null) {
+                        widget.onChanged!(state.value!);
+                      }
+                      _textController!.clear();
+                    }
+                  },
                 ),
-              );
-            },
-            onSuggestionSelected: (suggestion) {
-              if (_additionItem != suggestion) {
-                setState(() {
-                  widget.initialItems.add(suggestion);
-                });
-                if (widget.onChanged != null) {
-                  widget.onChanged!();
-                }
-                _textController!.clear();
-              }
-            },
+              ),
+              SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: BoxConstraints(minHeight: 30),
+                child: Wrap(
+                  alignment: widget.wrapConfiguration.alignment,
+                  crossAxisAlignment:
+                      widget.wrapConfiguration.crossAxisAlignment,
+                  runAlignment: widget.wrapConfiguration.runAlignment,
+                  runSpacing: widget.wrapConfiguration.runSpacing,
+                  spacing: widget.wrapConfiguration.spacing,
+                  direction: widget.wrapConfiguration.direction,
+                  textDirection: widget.wrapConfiguration.textDirection,
+                  verticalDirection: widget.wrapConfiguration.verticalDirection,
+                  children: state.value?.map<Widget>((item) {
+                        var conf = widget.configureChip(item);
+                        return Chip(
+                          label: conf.label!,
+                          shape: conf.shape as OutlinedBorder?,
+                          avatar: conf.avatar,
+                          backgroundColor: conf.backgroundColor,
+                          clipBehavior: conf.clipBehavior,
+                          deleteButtonTooltipMessage:
+                              conf.deleteButtonTooltipMessage,
+                          deleteIcon: conf.deleteIcon,
+                          deleteIconColor: conf.deleteIconColor,
+                          elevation: conf.elevation,
+                          labelPadding: conf.labelPadding,
+                          labelStyle: conf.labelStyle,
+                          materialTapTargetSize: conf.materialTapTargetSize,
+                          padding: conf.padding,
+                          shadowColor: conf.shadowColor,
+                          onDeleted: () {
+                            setState(() {
+                              var list = [...state.value!]..remove(item);
+
+                              state.didChange(list);
+                            });
+                            if (widget.onChanged != null) {
+                              widget.onChanged!(state.value!);
+                            }
+                          },
+                        );
+                      }).toList() ??
+                      const [SizedBox()],
+                ),
+              ),
+              SizedBox(height: 4),
+            ],
           ),
-        ),
-        Wrap(
-          alignment: widget.wrapConfiguration.alignment,
-          crossAxisAlignment: widget.wrapConfiguration.crossAxisAlignment,
-          runAlignment: widget.wrapConfiguration.runAlignment,
-          runSpacing: widget.wrapConfiguration.runSpacing,
-          spacing: widget.wrapConfiguration.spacing,
-          direction: widget.wrapConfiguration.direction,
-          textDirection: widget.wrapConfiguration.textDirection,
-          verticalDirection: widget.wrapConfiguration.verticalDirection,
-          children: widget.initialItems.map<Widget>((item) {
-            var conf = widget.configureChip(item);
-            return Chip(
-              label: conf.label!,
-              shape: conf.shape as OutlinedBorder?,
-              avatar: conf.avatar,
-              backgroundColor: conf.backgroundColor,
-              clipBehavior: conf.clipBehavior,
-              deleteButtonTooltipMessage: conf.deleteButtonTooltipMessage,
-              deleteIcon: conf.deleteIcon,
-              deleteIconColor: conf.deleteIconColor,
-              elevation: conf.elevation,
-              labelPadding: conf.labelPadding,
-              labelStyle: conf.labelStyle,
-              materialTapTargetSize: conf.materialTapTargetSize,
-              padding: conf.padding,
-              shadowColor: conf.shadowColor,
-              onDeleted: () {
-                setState(() {
-                  widget.initialItems.remove(item);
-                });
-                if (widget.onChanged != null) {
-                  widget.onChanged!();
-                }
-              },
-            );
-          }).toList(),
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  ///manage dropdownSearch field decoration
+  InputDecoration _manageDropdownDecoration(
+      FormFieldState state, List<T>? data) {
+    return (widget.dropdownSearchDecoration ??
+            InputDecoration(
+                contentPadding: EdgeInsets.fromLTRB(12, 12, 0, 0),
+                border: OutlineInputBorder()))
+        .applyDefaults(Theme.of(state.context).inputDecorationTheme)
+        .copyWith(
+            enabled: widget.enabled,
+            labelText: widget.label,
+            hintText: widget.hint,
+            errorText: state.errorText);
   }
 }
